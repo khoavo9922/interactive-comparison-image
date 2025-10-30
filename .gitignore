@@ -1,0 +1,11 @@
+# Logs
+npm_output.log
+uvicorn_output.log
+
+# Python
+__pycache__/
+*.pyc
+
+# Node
+node_modules/
+.next/
