@@ -19,13 +19,21 @@ if not openai.api_key:
 client = openai.OpenAI()
 
 @app.post("/api/process-image")
-async def process_image(prompt: str = Form(...), file: UploadFile = File(...)):
+async def process_image(
+    prompt: str = Form(...), 
+    file: UploadFile = File(...),
+    mask: UploadFile = File(None)
+):
     try:
         # Read image file contents
         contents = await file.read()
 
         # Open the image with Pillow to process it
         with Image.open(io.BytesIO(contents)) as image:
+            # Convert to RGBA if needed (DALL-E 2 edit API requires RGBA, LA, or L format)
+            if image.mode not in ['RGBA', 'LA', 'L']:
+                image = image.convert('RGBA')
+            
             # Resize the image to be 1024x1024 (required square size for DALL-E 2 edit API)
             resized_image = image.resize((1024, 1024))
 
@@ -33,15 +41,47 @@ async def process_image(prompt: str = Form(...), file: UploadFile = File(...)):
             png_buffer = io.BytesIO()
             resized_image.save(png_buffer, format='PNG')
             png_buffer.seek(0)
+            png_buffer.name = 'image.png'
 
-            # Call OpenAI DALL-E 2 for image editing with the processed PNG image
-            response = client.images.edit(
-                model="dall-e-2",
-                image=png_buffer.getvalue(),
-                prompt=prompt,
-                n=1,
-                size="1024x1024"
-            )
+            # Process mask if provided
+            mask_buffer = None
+            if mask:
+                mask_contents = await mask.read()
+                with Image.open(io.BytesIO(mask_contents)) as mask_image:
+                    # Convert mask to RGBA
+                    if mask_image.mode != 'RGBA':
+                        mask_image = mask_image.convert('RGBA')
+                    
+                    # Resize mask to match image size
+                    resized_mask = mask_image.resize((1024, 1024))
+                    
+                    # Save mask to buffer
+                    mask_buffer = io.BytesIO()
+                    resized_mask.save(mask_buffer, format='PNG')
+                    mask_buffer.seek(0)
+                    mask_buffer.name = 'mask.png'
+
+            # Call OpenAI DALL-E 2 for image editing
+            # Improve the prompt for better object removal
+            enhanced_prompt = f"A photo with the following changes: {prompt}. Fill in the removed areas naturally to match the surrounding environment."
+            
+            if mask_buffer:
+                response = client.images.edit(
+                    model="dall-e-2",
+                    image=png_buffer,
+                    mask=mask_buffer,
+                    prompt=enhanced_prompt,
+                    n=1,
+                    size="1024x1024"
+                )
+            else:
+                response = client.images.edit(
+                    model="dall-e-2",
+                    image=png_buffer,
+                    prompt=enhanced_prompt,
+                    n=1,
+                    size="1024x1024"
+                )
 
         # Get the URL of the edited image
         image_url = response.data[0].url
