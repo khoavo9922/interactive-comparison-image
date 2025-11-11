@@ -34,10 +34,14 @@ async def process_image(prompt: str = Form(...), file: UploadFile = File(...)):
             resized_image.save(png_buffer, format='PNG')
             png_buffer.seek(0)
 
+            # HACK: Set a filename on the buffer to ensure the correct mimetype is sent.
+            # The OpenAI client library uses the filename to determine the content type.
+            png_buffer.name = 'image.png'
+
             # Call OpenAI DALL-E 2 for image editing with the processed PNG image
             response = client.images.edit(
                 model="dall-e-2",
-                image=png_buffer.getvalue(),
+                image=png_buffer,
                 prompt=prompt,
                 n=1,
                 size="1024x1024"
