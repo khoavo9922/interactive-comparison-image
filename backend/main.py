@@ -21,19 +21,27 @@ client = openai.OpenAI()
 @app.post("/api/process-image")
 async def process_image(prompt: str = Form(...), file: UploadFile = File(...)):
     try:
-        # Read image file into bytes
+        # Read image file contents
         contents = await file.read()
-        image_bytes = io.BytesIO(contents)
-        image_bytes.seek(0)
 
-        # Call OpenAI DALL-E 2 for image editing
-        response = client.images.edit(
-            model="dall-e-2",
-            image=contents,
-            prompt=prompt,
-            n=1,
-            size="1024x1024"
-        )
+        # Open the image with Pillow to process it
+        with Image.open(io.BytesIO(contents)) as image:
+            # Resize the image to be 1024x1024 (required square size for DALL-E 2 edit API)
+            resized_image = image.resize((1024, 1024))
+
+            # Convert the image to PNG format in an in-memory buffer
+            png_buffer = io.BytesIO()
+            resized_image.save(png_buffer, format='PNG')
+            png_buffer.seek(0)
+
+            # Call OpenAI DALL-E 2 for image editing with the processed PNG image
+            response = client.images.edit(
+                model="dall-e-2",
+                image=png_buffer.getvalue(),
+                prompt=prompt,
+                n=1,
+                size="1024x1024"
+            )
 
         # Get the URL of the edited image
         image_url = response.data[0].url
@@ -46,8 +54,9 @@ async def process_image(prompt: str = Form(...), file: UploadFile = File(...)):
         return StreamingResponse(io.BytesIO(image_response.content), media_type="image/png")
 
     except openai.APIError as e:
+        # Be more specific about the error if possible
         raise HTTPException(status_code=500, detail=f"OpenAI API error: {e}")
     except requests.RequestException as e:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch image from URL: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch the edited image from OpenAI's URL: {e}")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {e}")
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred during image processing: {e}")
