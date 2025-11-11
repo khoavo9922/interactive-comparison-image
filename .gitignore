@@ -1,6 +1,10 @@
 # Logs
 npm_output.log
 uvicorn_output.log
+*.log
+
+# Environment
+.env
 
 # Python
 __pycache__/
